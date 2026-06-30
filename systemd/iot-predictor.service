@@ -1,0 +1,27 @@
+[Unit]
+Description=IoT Honeypot Predictor Pipeline
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/iot-honeypot/ml-engine
+ExecStart=/opt/iot-honeypot/ml-engine/venv/bin/python /opt/iot-honeypot/ml-engine/predictor.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+# Keep the working set small for the 1GB box and within the dashboard's
+# DASHBOARD_MAX_PREDICTIONS read window (MAX_IPS + RETAIN_MAX < that window),
+# so recent IPs are never cut off from the predictions.jsonl tail-read.
+Environment=PREDICTOR_MAX_LINES_PER_LOG=6000
+Environment=PREDICTOR_MAX_IPS=800
+Environment=PREDICTOR_RETAIN_MAX=1000
+MemoryHigh=260M
+MemoryMax=340M
+
+[Install]
+WantedBy=multi-user.target

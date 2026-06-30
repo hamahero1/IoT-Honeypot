@@ -1,0 +1,3047 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IoT Honeypot SOC Dashboard Prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #0a0d12;
+      --card: #10141b;
+      --raised: #161b24;
+      --border: #232a36;
+      --border-soft: #1a1f29;
+      --text: #e7edf7;
+      --muted: #94a0b3;
+      --quiet: #657083;
+      --ok: oklch(0.78 0.13 195);
+      --info: oklch(0.72 0.13 250);
+      --warn: oklch(0.80 0.16 78);
+      --attack: oklch(0.70 0.22 25);
+      --rtsp: oklch(0.78 0.13 305);
+      --http: var(--ok);
+      --mqtt: var(--info);
+      --ssh: var(--warn);
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      --ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--page);
+    }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 48px 48px,
+        linear-gradient(180deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px) 0 0 / 48px 48px,
+        var(--page);
+      font-family: var(--ui);
+      font-size: 12px;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .is-hidden {
+      display: none !important;
+    }
+
+    .data,
+    .num,
+    .ip,
+    .score,
+    .logline,
+    .clock,
+    .asn,
+    .payload {
+      font-family: var(--mono);
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      height: 100vh;
+      padding: 10px 8px;
+      border-right: 1px solid var(--border-soft);
+      background: #080b10;
+    }
+
+    .rail-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 8px;
+      place-items: center;
+      border: 1px solid rgba(239, 77, 56, 0.55);
+      border-radius: 6px;
+      color: var(--attack);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    .nav-button {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--quiet);
+      background: transparent;
+    }
+
+    .nav-button:hover,
+    .nav-button.active {
+      border-color: var(--border);
+      color: var(--text);
+      background: var(--card);
+    }
+
+    .nav-button svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+    }
+
+    /* Collapse / hide the left rail */
+    .rail-toggle {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      margin-top: auto;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--quiet);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .rail-toggle:hover {
+      color: var(--text);
+      background: var(--card);
+    }
+
+    .rail-toggle svg,
+    .rail-reopen svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+    }
+
+    .rail-reopen {
+      position: fixed;
+      left: 10px;
+      top: 10px;
+      z-index: 30;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: var(--card);
+      cursor: pointer;
+      display: none;
+    }
+
+    .app.rail-collapsed {
+      grid-template-columns: 0 minmax(0, 1fr);
+    }
+
+    .app.rail-collapsed .rail {
+      display: none;
+    }
+
+    .app.rail-collapsed .rail-reopen {
+      display: grid;
+    }
+
+    .main {
+      min-width: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(10, 13, 18, 0.94);
+      backdrop-filter: blur(14px);
+    }
+
+    .crumbs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .crumbs strong {
+      overflow: hidden;
+      max-width: 52vw;
+      color: var(--text);
+      text-overflow: ellipsis;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .search {
+      width: 250px;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: #0c1017;
+      padding: 0 10px;
+      outline: none;
+    }
+
+    .search:focus {
+      border-color: rgba(59, 214, 221, 0.52);
+      box-shadow: 0 0 0 2px rgba(59, 214, 221, 0.09);
+    }
+
+    .clock {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .icon-action {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--card);
+    }
+
+    .icon-action.active {
+      border-color: rgba(59, 214, 221, 0.45);
+      color: var(--ok);
+      background: rgba(59, 214, 221, 0.08);
+    }
+
+    .icon-action svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+    }
+
+    .api-docs-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--card);
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .api-docs-link:hover {
+      border-color: rgba(59, 214, 221, 0.45);
+      color: var(--ok);
+      background: rgba(59, 214, 221, 0.08);
+    }
+
+    .api-docs-link svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+    }
+
+    .avatar {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text);
+      background: var(--raised);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .content {
+      display: grid;
+      gap: 14px;
+      width: min(100%, 1440px);
+      margin: 0 auto;
+      padding: 14px 18px 28px;
+    }
+
+    .content > section,
+    .content > article {
+      scroll-margin-top: 66px;
+    }
+
+    .status-banner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 16px;
+      min-height: 74px;
+      padding: 14px 16px;
+      border: 1px solid rgba(239, 77, 56, 0.48);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(239, 77, 56, 0.24), rgba(239, 77, 56, 0.08) 48%, rgba(16, 20, 27, 0.82)),
+        var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .severity-badge,
+    .verdict,
+    .protocol-chip,
+    .small-pill,
+    .score-pill,
+    .drawer-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-feature-settings: "zero", "cv01";
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .severity-badge {
+      padding: 0 12px;
+      border: 1px solid rgba(255, 128, 104, 0.5);
+      color: #ffd0c6;
+      background: rgba(239, 77, 56, 0.18);
+    }
+
+    .status-copy {
+      min-width: 0;
+    }
+
+    .status-copy h1 {
+      margin: 0;
+      overflow-wrap: anywhere;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .status-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .confidence {
+      text-align: right;
+    }
+
+    .confidence span {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .confidence strong {
+      color: #ffad9c;
+      font-family: var(--mono);
+      font-size: 23px;
+    }
+
+    .primary-action {
+      height: 34px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 157, 138, 0.62);
+      border-radius: 6px;
+      color: #fff3ef;
+      background: #a93428;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .section-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .kpis {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .analysis-row {
+      grid-template-columns: 2fr 1fr 1fr;
+    }
+
+    .mid-row {
+      grid-template-columns: 1.4fr 1fr;
+    }
+
+    .ops-row {
+      grid-template-columns: 1.3fr 1fr;
+    }
+
+    .card {
+      min-width: 0;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: var(--card);
+    }
+
+    .card.raised {
+      background: var(--raised);
+    }
+
+    .kpi {
+      position: relative;
+      overflow: hidden;
+      min-height: 104px;
+      padding: 13px;
+    }
+
+    .kpi::before {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      content: "";
+      background: linear-gradient(135deg, rgba(59, 214, 221, 0.08), transparent 48%);
+    }
+
+    .kpi.warn-tint::before {
+      background: linear-gradient(135deg, rgba(245, 196, 85, 0.09), transparent 48%);
+    }
+
+    .kpi.attack-tint::before {
+      background: linear-gradient(135deg, rgba(239, 77, 56, 0.10), transparent 48%);
+    }
+
+    .kpi-label,
+    .panel-title span,
+    .table th,
+    .mini-label,
+    .map-legend,
+    .timeline-time {
+      color: var(--quiet);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .kpi-label {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .kpi-value {
+      position: relative;
+      margin-top: 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 27px;
+      font-weight: 800;
+      line-height: 1;
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .kpi-sub {
+      position: relative;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .delta-up {
+      color: var(--attack);
+    }
+
+    .delta-down,
+    .ok {
+      color: var(--ok);
+    }
+
+    .warn {
+      color: var(--warn);
+    }
+
+    .info {
+      color: var(--info);
+    }
+
+    .attack {
+      color: var(--attack);
+    }
+
+    .panel {
+      padding: 13px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 24px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .tabs,
+    .filters {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--border-soft);
+      border-radius: 6px;
+      background: #0c1017;
+    }
+
+    .tab,
+    .filter-chip {
+      height: 22px;
+      border: 0;
+      border-radius: 4px;
+      color: var(--quiet);
+      background: transparent;
+      padding: 0 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .tab.active,
+    .filter-chip.active {
+      color: var(--text);
+      background: var(--raised);
+    }
+
+    .trend-chart {
+      width: 100%;
+      height: 256px;
+    }
+
+    .chart-grid {
+      stroke: #202735;
+      stroke-width: 1;
+    }
+
+    .chart-label {
+      fill: var(--quiet);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .attack-window {
+      fill: rgba(239, 77, 56, 0.11);
+      stroke: rgba(239, 77, 56, 0.34);
+      stroke-dasharray: 4 4;
+    }
+
+    .now-line {
+      stroke: rgba(231, 237, 247, 0.58);
+      stroke-dasharray: 2 5;
+    }
+
+    .trend-area {
+      opacity: 0.14;
+    }
+
+    .line-http,
+    .protocol-http {
+      color: var(--http);
+      stroke: var(--http);
+      fill: var(--http);
+    }
+
+    .line-mqtt,
+    .protocol-mqtt {
+      color: var(--mqtt);
+      stroke: var(--mqtt);
+      fill: var(--mqtt);
+    }
+
+    .line-rtsp,
+    .protocol-rtsp {
+      color: var(--rtsp);
+      stroke: var(--rtsp);
+      fill: var(--rtsp);
+    }
+
+    .line-ssh,
+    .protocol-ssh {
+      color: var(--ssh);
+      stroke: var(--ssh);
+      fill: var(--ssh);
+    }
+
+    .chart-line {
+      fill: none;
+      stroke-width: 2.3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .chart-legend,
+    .donut-legend {
+      display: grid;
+      gap: 8px;
+    }
+
+    .chart-legend {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 4px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Force each protocol's circle to its own colour. Needed because
+       .legend-item { color: var(--muted) } is declared after the
+       .protocol-* colour rules and would otherwise win, leaving the
+       currentColor dots looking white/grey. */
+    .protocol-http .dot { background: var(--http); }
+    .protocol-mqtt .dot { background: var(--mqtt); }
+    .protocol-rtsp .dot { background: var(--rtsp); }
+    .protocol-ssh .dot { background: var(--ssh); }
+
+    .donut-wrap {
+      position: relative;
+      display: grid;
+      min-height: 190px;
+      place-items: center;
+    }
+
+    .donut {
+      width: 168px;
+      height: 168px;
+      transform: rotate(-90deg);
+    }
+
+    .donut-track {
+      fill: none;
+      stroke: #202735;
+      stroke-width: 16;
+    }
+
+    .donut-seg {
+      fill: none;
+      stroke-width: 16;
+      stroke-linecap: butt;
+    }
+
+    .donut-center {
+      position: absolute;
+      text-align: center;
+    }
+
+    .donut-center strong {
+      display: block;
+      font-family: var(--mono);
+      font-size: 24px;
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .donut-center span {
+      color: var(--quiet);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .donut-legend .legend-item {
+      justify-content: space-between;
+    }
+
+    .legend-left {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .attack-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .attack-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: center;
+    }
+
+    .attack-name {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .bar-track {
+      overflow: hidden;
+      height: 7px;
+      border-radius: 999px;
+      background: #0a0d12;
+    }
+
+    .bar {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--attack);
+    }
+
+    .bar.warnbar {
+      background: var(--warn);
+    }
+
+    .bar.infobar {
+      background: var(--info);
+    }
+
+    .bar.rtspbar {
+      background: var(--rtsp);
+    }
+
+    .trend {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .feed {
+      display: grid;
+      gap: 8px;
+    }
+
+    .alert-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      background: #0d1118;
+    }
+
+    .alert-item:hover,
+    .source-row:hover {
+      border-color: var(--border);
+      background: #121722;
+    }
+
+    .severity {
+      width: 72px;
+      min-height: 20px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sev-critical {
+      color: #ffd3ca;
+      background: rgba(239, 77, 56, 0.18);
+      border: 1px solid rgba(239, 77, 56, 0.44);
+    }
+
+    .sev-high {
+      color: #ffdfca;
+      background: rgba(239, 112, 56, 0.14);
+      border: 1px solid rgba(239, 112, 56, 0.35);
+    }
+
+    .sev-warn {
+      color: #ffeab3;
+      background: rgba(245, 196, 85, 0.13);
+      border: 1px solid rgba(245, 196, 85, 0.34);
+    }
+
+    .sev-info {
+      color: #c8d8ff;
+      background: rgba(95, 137, 237, 0.13);
+      border: 1px solid rgba(95, 137, 237, 0.32);
+    }
+
+    .alert-main {
+      min-width: 0;
+    }
+
+    .alert-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .alert-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+      color: var(--quiet);
+      font-size: 10px;
+    }
+
+    .timeago {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .router-log {
+      display: grid;
+      gap: 7px;
+      max-height: 276px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .logline {
+      display: grid;
+      grid-template-columns: 62px 58px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      min-height: 24px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .verdict {
+      min-width: 54px;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      font-size: 9px;
+    }
+
+    .real {
+      border-color: rgba(59, 214, 221, 0.32);
+      color: var(--ok);
+      background: rgba(59, 214, 221, 0.10);
+    }
+
+    .honey {
+      border-color: rgba(239, 77, 56, 0.36);
+      color: var(--attack);
+      background: rgba(239, 77, 56, 0.12);
+    }
+
+    .live-packets {
+      display: grid;
+      gap: 12px;
+    }
+
+    .protocol-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .protocol-stat {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      background: #0d1118;
+    }
+
+    .protocol-stat strong {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .protocol-stat small {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 9px;
+      font-feature-settings: "zero", "cv01";
+      line-height: 1.35;
+    }
+
+    .packet-list {
+      display: grid;
+      gap: 6px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .packet-row {
+      display: grid;
+      grid-template-columns: 78px 56px 132px 58px 64px 138px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      min-height: 34px;
+      padding: 7px 8px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      color: var(--muted);
+      background: #0d1118;
+      text-align: left;
+    }
+
+    .packet-row:hover {
+      border-color: var(--border);
+      background: #121722;
+    }
+
+    .packet-time,
+    .packet-ip,
+    .packet-score,
+    .packet-payload {
+      overflow: hidden;
+      font-family: var(--mono);
+      font-feature-settings: "zero", "cv01";
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .packet-payload {
+      color: var(--text);
+    }
+
+    .packet-event {
+      overflow: hidden;
+      color: var(--quiet);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .source-map {
+      position: relative;
+      overflow: hidden;
+      min-height: 334px;
+      padding: 13px;
+    }
+
+    .map-canvas {
+      position: relative;
+      height: 273px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at center, rgba(62, 74, 96, 0.48) 1px, transparent 1.2px) 0 0 / 18px 18px,
+        #0c1017;
+    }
+
+    .map-canvas svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .continent {
+      fill: #151b26;
+      stroke: #242c3a;
+      stroke-width: 1;
+    }
+
+    .map-line {
+      stroke: rgba(239, 77, 56, 0.42);
+      stroke-dasharray: 6 5;
+      stroke-width: 1.4;
+    }
+
+    .pin {
+      position: absolute;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--attack);
+      box-shadow: 0 0 0 0 rgba(239, 77, 56, 0.7);
+      animation: pulsePin 1.6s infinite;
+    }
+
+    .pin::after {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      width: max-content;
+      transform: translateX(-50%);
+      color: var(--muted);
+      content: attr(data-label);
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pin.blue {
+      background: var(--info);
+      box-shadow: 0 0 0 0 rgba(105, 143, 238, 0.7);
+    }
+
+    .pin.amber {
+      background: var(--warn);
+      box-shadow: 0 0 0 0 rgba(245, 196, 85, 0.7);
+    }
+
+    .honeypot-site {
+      position: absolute;
+      left: 23%;
+      top: 43%;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--ok);
+      border-radius: 3px;
+      background: #0a0d12;
+      box-shadow: 0 0 18px rgba(59, 214, 221, 0.32);
+    }
+
+    @keyframes pulsePin {
+      70% {
+        box-shadow: 0 0 0 12px rgba(239, 77, 56, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 77, 56, 0);
+      }
+    }
+
+    .map-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .pipeline {
+      display: grid;
+      gap: 12px;
+    }
+
+    .pipeline-counts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .mini-stat {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      background: #0d1118;
+    }
+
+    .mini-stat strong {
+      display: block;
+      margin-top: 6px;
+      font-family: var(--mono);
+      font-size: 16px;
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .pipeline-steps {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .step {
+      position: relative;
+      min-width: 0;
+      padding: 9px 7px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #0d1118;
+    }
+
+    .step:not(:last-child)::after {
+      position: absolute;
+      top: 50%;
+      right: -8px;
+      z-index: 1;
+      width: 8px;
+      height: 1px;
+      background: var(--border);
+      content: "";
+    }
+
+    .step-name {
+      overflow: hidden;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .step-throughput {
+      margin-top: 7px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .health-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    .table {
+      width: 100%;
+      min-width: 1060px;
+      border-collapse: collapse;
+    }
+
+    .table th,
+    .table td {
+      height: 42px;
+      border-bottom: 1px solid var(--border-soft);
+      padding: 0 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .table th:last-child,
+    .table td:last-child {
+      text-align: right;
+    }
+
+    .source-row {
+      cursor: pointer;
+    }
+
+    .source-row:last-child td {
+      border-bottom: 0;
+    }
+
+    .country {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .asn {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .spark {
+      width: 92px;
+      height: 26px;
+    }
+
+    .spark path {
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .protocol-chip {
+      min-width: 50px;
+      border: 1px solid currentColor;
+      padding: 0 8px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .score-pill {
+      min-width: 54px;
+      border: 1px solid rgba(239, 77, 56, 0.36);
+      color: var(--attack);
+      background: rgba(239, 77, 56, 0.09);
+      padding: 0 8px;
+    }
+
+    .score-pill.medium {
+      border-color: rgba(245, 196, 85, 0.34);
+      color: var(--warn);
+      background: rgba(245, 196, 85, 0.08);
+    }
+
+    .score-pill.low {
+      border-color: rgba(59, 214, 221, 0.30);
+      color: var(--ok);
+      background: rgba(59, 214, 221, 0.08);
+    }
+
+    .live {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      animation: livePulse 1.25s infinite;
+    }
+
+    @keyframes livePulse {
+      50% {
+        opacity: 0.38;
+        transform: scale(0.78);
+      }
+    }
+
+    .scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      background: rgba(0, 0, 0, 0.46);
+    }
+
+    .scrim.open {
+      display: block;
+    }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      width: min(480px, 100vw);
+      height: 100vh;
+      border-left: 1px solid var(--border);
+      background: #0d1118;
+      box-shadow: -30px 0 70px rgba(0, 0, 0, 0.48);
+      transform: translateX(102%);
+      transition: transform 180ms ease;
+    }
+
+    .drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-head {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .drawer-topline {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .drawer h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 26px;
+      font-feature-settings: "zero", "cv01";
+    }
+
+    .geo {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .close-drawer {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--card);
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .drawer-body {
+      display: grid;
+      gap: 14px;
+      overflow: auto;
+      padding: 14px 16px 18px;
+    }
+
+    .pill-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pill-grid--ml {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .small-pill {
+      display: grid;
+      min-height: 54px;
+      align-content: center;
+      justify-items: start;
+      padding: 9px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      color: var(--text);
+      background: var(--card);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .small-pill span {
+      color: var(--quiet);
+      font-family: var(--ui);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .drawer-section {
+      padding: 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: var(--card);
+    }
+
+    .drawer-section h3 {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .detail-note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: var(--raised);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .detail-payload {
+      font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .drawer-center-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .packet-mini-list,
+    .route-mini-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .packet-mini,
+    .route-mini {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      background: #0b0f15;
+    }
+
+    .packet-mini strong,
+    .route-mini strong {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      align-items: center;
+      color: var(--text);
+      font-size: 10px;
+    }
+
+    .packet-mini span,
+    .route-mini span {
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr);
+      gap: 10px;
+    }
+
+    .timeline-card {
+      min-width: 0;
+      padding-left: 10px;
+      border-left: 1px solid var(--border);
+    }
+
+    .timeline-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 5px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .payload {
+      overflow: hidden;
+      max-width: 100%;
+      color: var(--muted);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cred-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .cred {
+      overflow: hidden;
+      padding: 8px;
+      border: 1px solid var(--border-soft);
+      border-radius: 7px;
+      color: var(--muted);
+      background: #0d1118;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .drawer-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .drawer-action {
+      min-height: 34px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: var(--raised);
+    }
+
+    .drawer-action.danger {
+      border-color: rgba(239, 77, 56, 0.44);
+      color: #ffd0c6;
+      background: rgba(239, 77, 56, 0.12);
+    }
+
+    .drawer-action.active {
+      border-color: rgba(59, 214, 221, 0.48);
+      color: var(--ok);
+      background: rgba(59, 214, 221, 0.10);
+    }
+
+    .empty-state {
+      padding: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 7px;
+      color: var(--muted);
+      background: #0d1118;
+      font-family: var(--mono);
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 60;
+      max-width: min(420px, calc(100vw - 36px));
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      background: #10141b;
+      box-shadow: var(--shadow);
+      font-family: var(--mono);
+      font-size: 10px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 140ms ease, transform 140ms ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .pause-motion *,
+    .pause-motion *::before,
+    .pause-motion *::after {
+      animation-play-state: paused !important;
+    }
+
+    @media (max-width: 1240px) {
+      .kpis {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .analysis-row,
+      .mid-row,
+      .ops-row {
+        grid-template-columns: 1fr;
+      }
+
+      .packet-row {
+        grid-template-columns: 72px 56px 124px 58px 132px minmax(0, 1fr);
+      }
+
+      .packet-score {
+        display: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        position: fixed;
+        inset: auto 0 0 0;
+        flex-direction: row;
+        justify-content: center;
+        width: 100%;
+        height: 54px;
+        padding: 7px 10px;
+        border-top: 1px solid var(--border-soft);
+        border-right: 0;
+      }
+
+      .rail-mark {
+        display: none;
+      }
+
+      .nav-button {
+        width: 34px;
+        height: 34px;
+      }
+
+      .main {
+        padding-bottom: 54px;
+      }
+
+      .topbar {
+        padding: 0 12px;
+      }
+
+      .search,
+      .clock {
+        display: none;
+      }
+
+      .content {
+        padding: 12px;
+      }
+
+      .status-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .confidence {
+        text-align: left;
+      }
+
+      .kpis,
+      .protocol-stat-grid,
+      .pipeline-counts,
+      .health-grid,
+      .pipeline-steps,
+      .pill-grid,
+      .drawer-center-grid,
+      .drawer-actions,
+      .cred-list {
+        grid-template-columns: 1fr;
+      }
+
+      .step:not(:last-child)::after {
+        display: none;
+      }
+
+      .chart-legend {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .alert-item {
+        grid-template-columns: 1fr;
+      }
+
+      .logline {
+        grid-template-columns: 54px 54px minmax(0, 1fr);
+      }
+
+      .packet-row {
+        grid-template-columns: 64px 54px 54px minmax(0, 1fr);
+      }
+
+      .packet-ip,
+      .packet-event {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="rail" aria-label="Primary navigation">
+      <div class="rail-mark">HNY</div>
+      <button class="nav-button active" type="button" aria-label="Overview" data-nav-target="overview">
+        <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-3H4z"></path></svg>
+      </button>
+      <button class="nav-button" type="button" aria-label="Traffic" data-nav-target="traffic">
+        <svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-9"></path><path d="M4 20h16"></path></svg>
+      </button>
+      <button class="nav-button" type="button" aria-label="Alerts" data-nav-target="alerts">
+        <svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"></path><path d="M12 9v4M12 17h.01"></path></svg>
+      </button>
+      <button class="nav-button" type="button" aria-label="Sources" data-nav-target="sources">
+        <svg viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 0 0-14 0c0 5.9 7 11 7 11z"></path><path d="M12 10h.01"></path></svg>
+      </button>
+      <button class="nav-button" type="button" aria-label="Logs" data-nav-target="router-log-section">
+        <svg viewBox="0 0 24 24"><path d="M6 5h12M6 10h12M6 15h8M6 20h10"></path></svg>
+      </button>
+      <button class="nav-button" type="button" aria-label="Settings" data-nav-target="settings">
+        <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"></path><path d="M4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"></path></svg>
+      </button>
+      <button class="rail-toggle" type="button" aria-label="Hide menu" id="railToggle">
+        <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"></path></svg>
+      </button>
+    </aside>
+    <button class="rail-reopen" type="button" aria-label="Show menu" id="railReopen">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+    </button>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="crumbs"><span>Router</span><span>/</span><strong>Honeypot SOC Overview</strong></div>
+        <div class="top-actions">
+          <div class="clock" id="liveClock">loading UTC</div>
+          <a class="api-docs-link" id="apiDocsLink" href="#" target="_blank" rel="noopener" title="Open FastAPI auto-documentation (Swagger UI)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v5h5"></path><path d="M7 3h8l5 5v13H7z"></path><path d="M9 13h6M9 17h6"></path></svg>
+            <span>API Docs</span>
+          </a>
+          <div class="avatar">SOC</div>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="status-banner" id="overview" aria-label="Current attack status">
+          <div class="severity-badge" id="statusSeverity">Loading</div>
+          <div class="status-copy">
+            <h1 id="statusHeadline">Waiting for live router events</h1>
+            <div class="status-meta" id="statusMeta">
+              <span>Routing state: <strong class="data">loading</strong></span>
+              <span>System routes: <strong class="data">HONEY / REAL</strong></span>
+              <span>Primary protocol: <strong class="data">unknown</strong></span>
+              <span>Top source: <strong class="data">none</strong></span>
+            </div>
+          </div>
+          <div class="confidence">
+            <span>ML confidence</span>
+            <strong id="statusConfidence">0.00</strong>
+          </div>
+          <button class="primary-action" id="statusPrimaryAction" type="button" data-open-ip="" disabled>Open incident</button>
+        </section>
+
+        <section class="section-grid kpis" aria-label="Key metrics">
+          <article class="card kpi">
+            <div class="kpi-label"><span>Lifetime packets</span><span class="live"><i class="live-dot"></i>real data</span></div>
+            <div class="kpi-value" id="lifetimePackets">0</div>
+            <div class="kpi-sub" id="lifetimePacketsSub"><span class="delta-up">API lifetime total</span><span>loading live rows</span></div>
+          </article>
+          <article class="card kpi attack-tint">
+            <div class="kpi-label"><span>Attack share</span><span>lifetime</span></div>
+            <div class="kpi-value attack" id="attackShareValue">0.0%</div>
+            <div class="kpi-sub" id="attackShareSub"><span>0 honey</span><span>0 real</span></div>
+          </article>
+          <article class="card kpi warn-tint">
+            <div class="kpi-label"><span>Active alerts</span><span>severity</span></div>
+            <div class="kpi-value" id="activeAlertsValue">0</div>
+            <div class="kpi-sub" id="activeAlertsSub"><span class="attack">0 critical</span><span class="warn">0 high</span></div>
+          </article>
+          <article class="card kpi">
+            <div class="kpi-label"><span>Unique sources</span><span>lifetime</span></div>
+            <div class="kpi-value" id="uniqueSourcesValue">0</div>
+            <div class="kpi-sub" id="uniqueSourcesSub"><span class="delta-up">live</span><span>sources seen</span></div>
+          </article>
+          <article class="card kpi">
+            <div class="kpi-label"><span>ML pipeline health</span><span class="ok">online</span></div>
+            <div class="kpi-value" id="modelVersionValue">live</div>
+            <div class="kpi-sub" id="pipelineHealthSub"><span>API connected</span><span>predictions loading</span></div>
+          </article>
+        </section>
+
+        <section class="section-grid analysis-row" id="traffic">
+          <article class="card panel">
+            <div class="panel-title">
+              <h2>Traffic trend</h2>
+              <div class="tabs" role="tablist" aria-label="Traffic time range">
+                <button class="tab" type="button" data-range="1h">1h</button>
+                <button class="tab" type="button" data-range="6h">6h</button>
+                <button class="tab active" type="button" data-range="24h">24h</button>
+              </div>
+            </div>
+            <svg class="trend-chart" id="trafficTrendChart" viewBox="0 0 760 256" role="img" aria-label="Live traffic trend by protocol">
+              <path class="chart-grid" d="M42 28H734M42 76H734M42 124H734M42 172H734M42 220H734M42 28V220M176 28V220M310 28V220M444 28V220M578 28V220M712 28V220"></path>
+              <text class="chart-label" x="4" y="32">live</text>
+              <text class="chart-label" x="10" y="128">pkts</text>
+              <text class="chart-label" x="16" y="224">0</text>
+              <path class="now-line" d="M714 28V220"></path>
+              <text class="chart-label" x="690" y="242">NOW</text>
+            </svg>
+            <div class="chart-legend">
+              <span class="legend-item protocol-http"><i class="dot"></i>HTTP 0</span>
+              <span class="legend-item protocol-mqtt"><i class="dot"></i>MQTT 0</span>
+              <span class="legend-item protocol-rtsp"><i class="dot"></i>RTSP 0</span>
+              <span class="legend-item protocol-ssh"><i class="dot"></i>SSH 0</span>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="panel-title">
+              <h2>Protocol mix</h2>
+              <span>lifetime</span>
+            </div>
+            <div class="donut-wrap">
+              <svg class="donut" viewBox="0 0 120 120" aria-label="Protocol mix donut">
+                <circle class="donut-track" cx="60" cy="60" r="45"></circle>
+                <circle class="donut-seg protocol-http" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                <circle class="donut-seg protocol-mqtt" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                <circle class="donut-seg protocol-rtsp" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                <circle class="donut-seg protocol-ssh" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+              </svg>
+              <div class="donut-center">
+                <strong id="protocolTotal">0</strong>
+                <span>packets</span>
+              </div>
+            </div>
+            <div class="donut-legend" id="protocolLegend">
+              <span class="legend-item protocol-http"><span class="legend-left"><i class="dot"></i>HTTP</span><span>0 · 0.0%</span></span>
+              <span class="legend-item protocol-mqtt"><span class="legend-left"><i class="dot"></i>MQTT</span><span>0 · 0.0%</span></span>
+              <span class="legend-item protocol-rtsp"><span class="legend-left"><i class="dot"></i>RTSP</span><span>0 · 0.0%</span></span>
+              <span class="legend-item protocol-ssh"><span class="legend-left"><i class="dot"></i>SSH</span><span>0 · 0.0%</span></span>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="panel-title">
+              <h2>Attack breakdown</h2>
+              <span>ranked</span>
+            </div>
+            <div class="attack-list" id="attackBreakdown">
+              <div class="empty-state">Waiting for real attack breakdown data.</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="section-grid mid-row" id="alerts">
+          <article class="card panel">
+            <div class="panel-title">
+              <h2>Latest alerts</h2>
+              <div class="filters" aria-label="Alert filters">
+                <button class="filter-chip active" type="button" data-filter="all">All</button>
+                <button class="filter-chip" type="button" data-filter="critical">Critical</button>
+                <button class="filter-chip" type="button" data-filter="honey">Honey</button>
+              </div>
+            </div>
+            <div class="feed" id="alertFeed">
+              <div class="empty-state" id="alertEmpty">Waiting for real alert data.</div>
+            </div>
+          </article>
+
+          <article class="card panel" id="router-log-section">
+            <div class="panel-title">
+              <h2>Router route events</h2>
+              <span class="live"><i class="live-dot"></i>stream</span>
+            </div>
+            <div class="router-log" id="routerRouteLog" aria-label="Live router decision log">
+              <div class="empty-state">Waiting for real router route events.</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="card panel live-packets" id="live-packets">
+          <div class="panel-title">
+            <h2>Live packets</h2>
+            <span class="live"><i class="live-dot"></i>HTTP / MQTT / RTSP / SSH</span>
+          </div>
+          <div class="protocol-stat-grid" id="liveProtocolStrip" aria-label="Live packet count by protocol">
+            <div class="protocol-stat protocol-http"><span class="mini-label">HTTP</span><strong>0</strong></div>
+            <div class="protocol-stat protocol-mqtt"><span class="mini-label">MQTT</span><strong>0</strong></div>
+            <div class="protocol-stat protocol-rtsp"><span class="mini-label">RTSP</span><strong>0</strong></div>
+            <div class="protocol-stat protocol-ssh"><span class="mini-label">SSH</span><strong>0</strong></div>
+          </div>
+          <div class="packet-list" id="livePacketList" aria-label="Live board packet events">
+            <div class="empty-state">Waiting for real packet events.</div>
+          </div>
+        </section>
+
+        <section class="section-grid ops-row" id="operations">
+          <article class="card panel pipeline" id="pipeline">
+            <div class="panel-title">
+              <h2>Pipeline panel</h2>
+              <span class="ok">healthy</span>
+            </div>
+            <div class="pipeline-counts">
+              <div class="mini-stat"><span class="mini-label">Raw events</span><strong id="rawEventsValue">0</strong></div>
+              <div class="mini-stat"><span class="mini-label">Normalized</span><strong id="normalizedEventsValue">0</strong></div>
+              <div class="mini-stat"><span class="mini-label">Predictions</span><strong id="predictionsValue">0</strong></div>
+            </div>
+            <div class="pipeline-steps">
+              <div class="step"><div class="step-name">Packet</div><div class="step-throughput" id="packetThroughputValue">0</div></div>
+              <div class="step"><div class="step-name">Router</div><div class="step-throughput" id="routerThroughputValue">0</div></div>
+              <div class="step"><div class="step-name">Logs</div><div class="step-throughput" id="logsThroughputValue">0</div></div>
+              <div class="step"><div class="step-name">Normalize</div><div class="step-throughput" id="normalizeThroughputValue">0</div></div>
+              <div class="step"><div class="step-name">ML</div><div class="step-throughput" id="mlThroughputValue">0</div></div>
+              <div class="step"><div class="step-name">Dashboard</div><div class="step-throughput">live</div></div>
+            </div>
+            <div class="health-grid">
+              <div class="mini-stat"><span class="mini-label">Parser errors</span><strong class="warn" id="parserErrorsValue">0</strong></div>
+              <div class="mini-stat"><span class="mini-label">Queue depth</span><strong id="queueDepthValue">live</strong></div>
+              <div class="mini-stat"><span class="mini-label">Lag</span><strong class="ok" id="lagValue">live</strong></div>
+            </div>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-label="IP drill-down" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="drawer-topline">
+        <div>
+          <h2 id="drawerIp">No source selected</h2>
+          <div class="geo" id="drawerGeo">Open a real source row from the live board.</div>
+        </div>
+        <button class="close-drawer" id="closeDrawer" type="button" aria-label="Close drawer">×</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="pill-grid">
+        <div class="small-pill"><span>Risk level</span><strong id="drawerRisk">unknown</strong></div>
+        <div class="small-pill"><span>Router decision</span><strong id="drawerDecision">unknown</strong></div>
+        <div class="small-pill"><span>First seen</span><strong id="drawerFirst">unknown</strong></div>
+        <div class="small-pill"><span>Last seen</span><strong id="drawerLast">unknown</strong></div>
+      </div>
+
+      <section class="drawer-section">
+        <h3>Routing state</h3>
+        <div class="chip-row" id="drawerRouteState">
+          <span class="data">No source selected</span>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>Protocols touched</h3>
+        <div class="chip-row" id="drawerProtocols"></div>
+      </section>
+
+      <div class="drawer-center-grid">
+        <div class="small-pill"><span>Packets by this IP</span><strong id="drawerPacketCount">0</strong></div>
+        <div class="small-pill"><span>Router decisions</span><strong id="drawerRouteCount">0</strong></div>
+      </div>
+
+      <section class="drawer-section">
+        <h3>Last 12 packets</h3>
+        <div class="packet-mini-list" id="drawerLastPackets"></div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>Last 3 router decisions</h3>
+        <div class="route-mini-list" id="drawerLastRoutes"></div>
+      </section>
+
+      <div class="drawer-actions">
+        <button class="drawer-action" type="button" data-drawer-action="watchlist">Watchlist</button>
+        <button class="drawer-action" type="button" data-drawer-action="acknowledge">Acknowledge</button>
+      </div>
+    </div>
+  </aside>
+
+  <aside class="drawer" id="packetDrawer" aria-label="Packet detail" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="drawer-topline">
+        <div>
+          <h2 id="pktTitle">Packet detail</h2>
+          <div class="geo" id="pktSub">Select a packet from the live board.</div>
+        </div>
+        <button class="close-drawer" id="closePacketDrawer" type="button" aria-label="Close packet detail">×</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="pill-grid">
+        <div class="small-pill"><span>Risk level</span><strong id="pktRisk">unknown</strong></div>
+        <div class="small-pill"><span>Router decision</span><strong id="pktRoute">unknown</strong></div>
+        <div class="small-pill"><span>Protocol</span><strong id="pktProtocol">unknown</strong></div>
+        <div class="small-pill"><span>Time</span><strong id="pktTime">unknown</strong></div>
+      </div>
+
+      <section class="drawer-section">
+        <h3>ML prediction</h3>
+        <div class="pill-grid pill-grid--ml">
+          <div class="small-pill"><span>Predicted attack</span><strong id="pktAttack">unknown</strong></div>
+          <div class="small-pill"><span>Confidence</span><strong id="pktConfidence">—</strong></div>
+          <div class="small-pill"><span>Confidence band</span><strong id="pktBand">—</strong></div>
+          <div class="small-pill"><span>Detection method</span><strong id="pktMethod">—</strong></div>
+          <div class="small-pill"><span>Attacker profile</span><strong id="pktProfile">—</strong></div>
+          <div class="small-pill"><span>Kill chain stage</span><strong id="pktKillChain">—</strong></div>
+          <div class="small-pill"><span>Raw model output</span><strong id="pktMlRaw">—</strong></div>
+          <div class="small-pill"><span>Repeat offender</span><strong id="pktRepeat">—</strong></div>
+        </div>
+        <div class="detail-note" id="pktRecommendation">Loading recommendation…</div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>ML feature evidence</h3>
+        <div class="pill-grid pill-grid--ml">
+          <div class="small-pill"><span>Total events</span><strong id="pktFeatEvents">—</strong></div>
+          <div class="small-pill"><span>Requests / min</span><strong id="pktFeatRpm">—</strong></div>
+          <div class="small-pill"><span>Scanner path hits</span><strong id="pktFeatScan">—</strong></div>
+          <div class="small-pill"><span>404 responses</span><strong id="pktFeat404">—</strong></div>
+          <div class="small-pill"><span>401 responses</span><strong id="pktFeat401">—</strong></div>
+          <div class="small-pill"><span>Login attempts</span><strong id="pktFeatLogin">—</strong></div>
+          <div class="small-pill"><span>Exploit indicator</span><strong id="pktFeatExploit">—</strong></div>
+          <div class="small-pill"><span>Geo / ISP</span><strong id="pktGeo">—</strong></div>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <h3>Packet data</h3>
+        <div class="pill-grid">
+          <div class="small-pill"><span>Source IP</span><strong id="pktIp">unknown</strong></div>
+          <div class="small-pill"><span>Path / topic</span><strong id="pktPath">—</strong></div>
+        </div>
+        <div class="detail-note detail-payload" id="pktPayload">—</div>
+      </section>
+
+      <div class="drawer-actions">
+        <button class="drawer-action" id="pktViewIp" type="button" data-open-ip="">View full IP profile</button>
+      </div>
+    </div>
+  </aside>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const sourceDetails = {};
+
+    const protocolClass = {
+      HTTP: "protocol-http",
+      MQTT: "protocol-mqtt",
+      RTSP: "protocol-rtsp",
+      SSH: "protocol-ssh"
+    };
+
+    const verdictClass = {
+      HONEY: "honey",
+      REAL: "real"
+    };
+
+    const drawer = document.getElementById("drawer");
+    const packetDrawer = document.getElementById("packetDrawer");
+    const scrim = document.getElementById("scrim");
+    const closeDrawer = document.getElementById("closeDrawer");
+    const toast = document.getElementById("toast");
+    const sourceResultCount = document.getElementById("sourceResultCount");
+    let sourceRows = Array.from(document.querySelectorAll(".source-row"));
+    let alertItems = Array.from(document.querySelectorAll(".alert-item"));
+    let routerLines = Array.from(document.querySelectorAll(".router-log .logline"));
+    let currentDrawerIp = "";
+    let currentAlertFilter = "all";
+    let toastTimer;
+
+    const trafficRanges = {
+      "1h": 60 * 60 * 1000,
+      "6h": 6 * 60 * 60 * 1000,
+      "24h": 24 * 60 * 60 * 1000
+    };
+    let currentTrafficRange = "24h";
+    let lastLiveRows = [];
+
+    const API_BASE = `${window.location.protocol}//${window.location.hostname}:8501`;
+
+    const apiDocsLink = document.getElementById("apiDocsLink");
+    if (apiDocsLink) {
+      apiDocsLink.href = `${API_BASE}/docs`;
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function formatPercent(value, total) {
+      const denominator = Number(total || 0);
+      if (!denominator) return "0.0%";
+      return `${Math.max(0, Math.min(100, (Number(value || 0) / denominator) * 100)).toFixed(1)}%`;
+    }
+
+    function setText(id, value) {
+      const target = document.getElementById(id);
+      if (target) target.textContent = value;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function routeLabel(row = {}) {
+      const route = String(row.route_decision || row.routed_to || "").toLowerCase();
+      if (route.includes("honey")) return "HONEY";
+      if (route.includes("real")) return "REAL";
+      if (Number(row.attack_count || 0) > 0) return "HONEY";
+      if (String(row.risk_level || "").toLowerCase() === "low") return "REAL";
+      return "HONEY";
+    }
+
+    function routeClass(label) {
+      return label === "REAL" ? "real" : "honey";
+    }
+
+    function protocolClassName(protocol) {
+      return protocolClass[String(protocol || "").toUpperCase()] || "protocol-http";
+    }
+
+    function trackedProtocol(protocol) {
+      const value = String(protocol || "").toUpperCase();
+      return ["HTTP", "MQTT", "RTSP", "SSH"].includes(value) ? value : "HTTP";
+    }
+
+    function relativeTime(value) {
+      const then = new Date(value || "");
+      if (Number.isNaN(then.getTime())) return "live";
+      const seconds = Math.max(0, Math.floor((Date.now() - then.getTime()) / 1000));
+      if (seconds < 60) return `${seconds}s ago`;
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      return `${Math.floor(hours / 24)}d ago`;
+    }
+
+    function scoreFromRow(row = {}) {
+      const direct = row.score ?? row.router_score;
+      if (direct !== undefined && direct !== null && direct !== "") {
+        const number = Number(direct);
+        if (!Number.isNaN(number)) return number > 1 ? Math.min(0.99, number / 10).toFixed(2) : number.toFixed(2);
+      }
+      const risk = String(row.risk_level || "").toLowerCase();
+      if (risk === "critical") return "0.96";
+      if (risk === "high") return "0.86";
+      if (risk === "medium") return "0.62";
+      return "0.18";
+    }
+
+    function riskLabel(row = {}) {
+      const risk = String(row.risk_level || "").toLowerCase();
+      const score = Number(scoreFromRow(row));
+      const route = routeLabel(row);
+      if (route === "HONEY" || ["critical", "high", "medium"].includes(risk) || score >= 0.5) return "High risk";
+      return "Normal";
+    }
+
+    function timestampMs(row = {}) {
+      const value = row.last_seen || row.timestamp_utc || row.first_seen || row.ts || "";
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    function updateElementCollections() {
+      sourceRows = Array.from(document.querySelectorAll(".source-row"));
+      alertItems = Array.from(document.querySelectorAll(".alert-item"));
+      routerLines = Array.from(document.querySelectorAll(".router-log .logline"));
+    }
+
+    function emptySourceDetail(ip, route = "REAL") {
+      return {
+        geo: "Router pipeline · real data unavailable for this source",
+        risk: route === "HONEY" ? "High risk" : "Normal",
+        decision: route,
+        first: "unknown",
+        last: "unknown",
+        firstSeenMs: 0,
+        lastSeenMs: 0,
+        route,
+        hold: route === "HONEY" ? "system timeout" : "n/a",
+        protocols: [],
+        packetCount: 0,
+        routeCount: 0,
+        packets: [],
+        routes: []
+      };
+    }
+
+    function updateSourceDetailFromRow(row = {}, kind = "packet") {
+      const ip = row.source_ip || "unknown";
+      const protocols = Array.isArray(row.protocols) && row.protocols.length
+        ? row.protocols.map((item) => trackedProtocol(item))
+        : [trackedProtocol(row.protocol)];
+      const route = routeLabel(row);
+      const incomingTime = timestampMs(row);
+      const existing = sourceDetails[ip] || emptySourceDetail(ip, route);
+      const firstSeen = row.first_seen || row.timestamp_utc || row.ts || "";
+      const lastSeen = row.last_seen || row.timestamp_utc || row.ts || "";
+
+      protocols.forEach((protocol) => {
+        if (!existing.protocols.includes(protocol)) existing.protocols.push(protocol);
+      });
+
+      if (row.lat !== undefined || row.lon !== undefined || row.risk_level) {
+        existing.geo = `Router pipeline · ${row.lat ?? "?"}, ${row.lon ?? "?"} · ${row.risk_level || "Low"} risk`;
+      }
+      if (!existing.firstSeenMs || (firstSeen && Date.parse(firstSeen) < existing.firstSeenMs)) {
+        existing.firstSeenMs = Date.parse(firstSeen) || existing.firstSeenMs;
+        existing.first = firstSeen ? relativeTime(firstSeen) : existing.first;
+      }
+      if (incomingTime >= Number(existing.lastSeenMs || 0)) {
+        existing.lastSeenMs = incomingTime;
+        existing.last = lastSeen ? relativeTime(lastSeen) : "live";
+      }
+
+      existing.route = existing.route === "HONEY" || route === "HONEY" ? "HONEY" : "REAL";
+      existing.decision = existing.route;
+      existing.risk = existing.risk === "High risk" || riskLabel(row) === "High risk" ? "High risk" : "Normal";
+      existing.hold = existing.route === "HONEY" ? "system timeout" : "n/a";
+      existing.packetCount = Math.max(Number(existing.packetCount || 0), Number(row.count || row.event_count || 0));
+      existing.routeCount = Math.max(Number(existing.routeCount || 0), Number(row.route_count || row.router_decision_count || 0));
+
+      const packetEntry = {
+        time: row.timestamp_utc || row.last_seen || row.ts || "",
+        protocol: trackedProtocol(row.protocol),
+        route,
+        event: row.predicted_attack || row.event_type || row.log_origin || "packet",
+        payload: packetPayload(row)
+      };
+      const routeEntry = {
+        time: row.timestamp_utc || row.last_seen || row.ts || "",
+        protocol: trackedProtocol(row.protocol),
+        route,
+        event: row.event_type || row.log_origin || "router_decision",
+        payload: row.reason || row.path || row.topic || row.payload || "router decision"
+      };
+
+      if (kind !== "summary" && !existing.packets.some((item) => `${item.time}|${item.protocol}|${item.payload}` === `${packetEntry.time}|${packetEntry.protocol}|${packetEntry.payload}`)) {
+        existing.packets.push(packetEntry);
+      }
+      if (kind === "route" && !existing.routes.some((item) => `${item.time}|${item.protocol}|${item.payload}` === `${routeEntry.time}|${routeEntry.protocol}|${routeEntry.payload}`)) {
+        existing.routes.push(routeEntry);
+      }
+
+      existing.packets.sort((a, b) => Date.parse(b.time || 0) - Date.parse(a.time || 0));
+      existing.routes.sort((a, b) => Date.parse(b.time || 0) - Date.parse(a.time || 0));
+      existing.packetCount = Math.max(existing.packetCount, existing.packets.length);
+      existing.routeCount = Math.max(existing.routeCount, existing.routes.length);
+      existing.packets = existing.packets.slice(0, 12);
+      existing.routes = existing.routes.slice(0, 3);
+      sourceDetails[ip] = existing;
+    }
+
+    function renderAlerts(rows = []) {
+      const feed = document.getElementById("alertFeed");
+      if (!feed) return;
+      if (!rows.length) {
+        feed.innerHTML = '<div class="empty-state" id="alertEmpty">No real alert rows returned by the API.</div>';
+        updateElementCollections();
+        return;
+      }
+      feed.innerHTML = rows.slice(0, 8).map((row) => {
+        updateSourceDetailFromRow(row, "packet");
+        const ip = row.source_ip || "unknown";
+        const protocol = trackedProtocol(row.protocol);
+        const route = routeLabel(row);
+        const severity = String(row.risk_level || "Info").toLowerCase();
+        const severityClass = severity === "critical" ? "sev-critical" : severity === "high" ? "sev-high" : severity === "medium" ? "sev-warn" : "sev-info";
+        const eventName = row.predicted_attack || row.event_type || "event";
+        const payload = row.path || row.topic || row.payload || route;
+        return `
+          <button class="alert-item" type="button" data-open-packet="1" data-open-ip="${escapeHtml(ip)}" data-open-route="${route}" data-open-risk="${escapeHtml(riskLabel(row))}" data-open-protocol="${escapeHtml(protocol)}" data-open-event="${escapeHtml(row.predicted_attack || row.event_type || "alert")}" data-open-attack="${escapeHtml(row.predicted_attack || eventName)}" data-open-score="${escapeHtml((row.score === 0 || row.score) ? String(row.score) : "")}" data-open-path="${escapeHtml(row.path || row.topic || row.rtsp_path || "")}" data-open-rawtime="${escapeHtml(row.timestamp_utc || row.last_seen || "")}" data-open-payload="${escapeHtml(row.path || row.topic || row.payload || route)}" data-open-time="${escapeHtml(relativeTime(row.timestamp_utc || row.last_seen))}" data-severity="${severity}" data-verdict="${route.toLowerCase()}" data-search="${escapeHtml(`${ip} ${protocol} ${route} ${row.predicted_attack || ""}`)}">
+            <span class="severity ${severityClass}">${escapeHtml(row.risk_level || "Info")}</span>
+            <span class="alert-main"><span class="alert-line"><span class="protocol-chip ${protocolClassName(protocol)}">${protocol}</span><span class="ip">${escapeHtml(ip)}</span><span>${escapeHtml(eventName)}</span></span><span class="alert-meta"><span>risk <strong class="score">${riskLabel(row)}</strong></span><span>${escapeHtml(payload)}</span></span></span>
+            <span class="timeago">${relativeTime(row.timestamp_utc || row.last_seen)}</span>
+          </button>
+        `;
+      }).join("") + '<div class="empty-state is-hidden" id="alertEmpty">No alerts match the current filter.</div>';
+      updateElementCollections();
+    }
+
+    function renderRoutes(rows = []) {
+      const log = document.getElementById("routerRouteLog");
+      if (!log) return;
+      if (!rows.length) {
+        log.innerHTML = '<div class="empty-state">No real router route rows returned by the API.</div>';
+        updateElementCollections();
+        return;
+      }
+      log.innerHTML = rows.slice(0, 12).map((row) => {
+        updateSourceDetailFromRow(row, "route");
+        const route = routeLabel(row);
+        const routeCss = routeClass(route);
+        const protocol = trackedProtocol(row.protocol);
+        const ip = row.source_ip || row.client_ip || "unknown";
+        const ts = row.timestamp_utc || row.ts || "";
+        const time = ts ? new Date(ts).toISOString().slice(11, 19) : "--:--:--";
+        const reason = Array.isArray(row.reason) ? row.reason.join(", ") : row.reason || row.path || row.topic || row.event_type || "router event";
+        const routeText = route === "HONEY" ? "hold=system-timeout" : "route=real-system";
+        return `<div class="logline"><span>${time}</span><span class="verdict ${routeCss}">${route}</span><span>${protocol} ${escapeHtml(ip)} ${escapeHtml(reason)} ${routeText}</span></div>`;
+      }).join("");
+      updateElementCollections();
+    }
+
+    function packetTime(row = {}) {
+      const ts = row.timestamp_utc || row.last_seen || row.ts || "";
+      if (!ts) return "--:--:--";
+      const date = new Date(ts);
+      if (Number.isNaN(date.getTime())) return "--:--:--";
+      return date.toISOString().slice(11, 19);
+    }
+
+    function packetPayload(row = {}) {
+      const method = row.method ? `${row.method} ` : "";
+      const target = row.path || row.topic || row.payload || row.reason || row.predicted_attack || row.event_type || "live packet event";
+      return `${method}${target}`.replace(/\s+/g, " ").trim();
+    }
+
+    function dedupeLivePackets(rows = []) {
+      const seen = new Set();
+      return rows
+        .filter((row) => ["HTTP", "MQTT", "RTSP", "SSH"].includes(String(row.protocol || "").toUpperCase()))
+        .sort((a, b) => new Date(b.timestamp_utc || b.last_seen || 0) - new Date(a.timestamp_utc || a.last_seen || 0))
+        .filter((row) => {
+          const key = [
+            row.decision_id,
+            row.timestamp_utc,
+            row.source_ip,
+            row.protocol,
+            row.event_type,
+            row.path,
+            row.topic,
+            row.payload
+          ].join("|");
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    }
+
+    function renderLivePackets(rows = [], protocolDashboards = []) {
+      const strip = document.getElementById("liveProtocolStrip");
+      const list = document.getElementById("livePacketList");
+      if (!strip || !list) return;
+
+      const protocols = ["HTTP", "MQTT", "RTSP", "SSH"];
+      const liveRows = dedupeLivePackets(rows).slice(0, 36);
+      const rowsByProtocol = Object.fromEntries(
+        (protocolDashboards || [])
+          .filter((row) => row.protocol && row.protocol !== "all")
+          .map((row) => [String(row.protocol).toUpperCase(), row])
+      );
+      const protocolStats = Object.fromEntries(protocols.map((protocol) => {
+        const apiRow = rowsByProtocol[protocol];
+        return [protocol, {
+          total: Number(apiRow?.total_packets || 0),
+          honey: Number(apiRow?.honeypot_events || 0),
+          real: Number(apiRow?.real_events || 0)
+        }];
+      }));
+      liveRows.forEach((row) => {
+        const protocol = trackedProtocol(row.protocol);
+        if (rowsByProtocol[protocol]) return;
+        const route = routeLabel(row);
+        protocolStats[protocol].total += 1;
+        if (route === "HONEY") protocolStats[protocol].honey += 1;
+        if (route === "REAL") protocolStats[protocol].real += 1;
+      });
+
+      strip.innerHTML = protocols.map((protocol) => `
+        <div class="protocol-stat ${protocolClassName(protocol)}">
+          <span class="mini-label">${protocol}</span>
+          <strong>${formatNumber(protocolStats[protocol].total)}</strong>
+          <small><span>REAL system</span><span>${formatNumber(protocolStats[protocol].real)}</span></small>
+          <small><span>HONEY</span><span>${formatNumber(protocolStats[protocol].honey)}</span></small>
+        </div>
+      `).join("");
+
+      if (!liveRows.length) {
+        list.innerHTML = '<div class="empty-state">No live packet events in the current board window.</div>';
+        return;
+      }
+
+      list.innerHTML = liveRows.map((row) => {
+        updateSourceDetailFromRow(row, "packet");
+        const protocol = trackedProtocol(row.protocol);
+        const ip = row.source_ip || row.client_ip || "unknown";
+        const route = routeLabel(row);
+        const riskText = riskLabel(row);
+        const eventName = row.event_type || row.log_origin || "packet";
+        const payload = packetPayload(row);
+        const attackName = row.predicted_attack || eventName;
+        const scoreText = (row.score === 0 || row.score) ? String(row.score) : "";
+        const pathText = row.path || row.topic || row.rtsp_path || "";
+        return `
+          <button class="packet-row" type="button" data-open-packet="1" data-open-ip="${escapeHtml(ip)}" data-open-route="${route}" data-open-risk="${escapeHtml(riskLabel(row))}" data-open-protocol="${escapeHtml(protocol)}" data-open-event="${escapeHtml(eventName)}" data-open-attack="${escapeHtml(attackName)}" data-open-score="${escapeHtml(scoreText)}" data-open-path="${escapeHtml(pathText)}" data-open-rawtime="${escapeHtml(row.timestamp_utc || row.last_seen || "")}" data-open-payload="${escapeHtml(payload)}" data-open-time="${escapeHtml(relativeTime(row.timestamp_utc || row.last_seen))}" data-search="${escapeHtml(`${ip} ${protocol} ${route} ${eventName} ${payload}`)}">
+            <span class="packet-time">${packetTime(row)}</span>
+            <span class="protocol-chip ${protocolClassName(protocol)}">${escapeHtml(protocol)}</span>
+            <span class="packet-ip">${escapeHtml(ip)}</span>
+            <span class="verdict ${routeClass(route)}">${route}</span>
+            <span class="packet-score">${escapeHtml(riskText)}</span>
+            <span class="packet-event">${escapeHtml(eventName)}</span>
+            <span class="packet-payload">${escapeHtml(payload)}</span>
+          </button>
+        `;
+      }).join("");
+      updateElementCollections();
+    }
+
+    function trendRowsForRange(rows = []) {
+      const rangeMs = trafficRanges[currentTrafficRange] || trafficRanges["24h"];
+      const now = Date.now();
+      const filtered = rows.filter((row) => {
+        const ts = timestampMs(row);
+        return ts && now - ts <= rangeMs;
+      });
+      return filtered.length ? filtered : rows.filter((row) => timestampMs(row));
+    }
+
+    function linePath(points, xForIndex, yForValue) {
+      if (!points.length) return "";
+      return points.map((value, index) => `${index === 0 ? "M" : "L"}${xForIndex(index)} ${yForValue(value)}`).join(" ");
+    }
+
+    function renderTrafficTrend(rows = []) {
+      const svg = document.getElementById("trafficTrendChart");
+      if (!svg) return;
+
+      const protocols = ["HTTP", "MQTT", "RTSP", "SSH"];
+      const chart = { left: 42, right: 734, top: 28, bottom: 220 };
+      const liveRows = trendRowsForRange(rows)
+        .filter((row) => protocols.includes(String(row.protocol || "").toUpperCase()))
+        .sort((a, b) => timestampMs(a) - timestampMs(b));
+
+      const counts = Object.fromEntries(protocols.map((protocol) => [protocol, 0]));
+      if (!liveRows.length) {
+        svg.innerHTML = `
+          <path class="chart-grid" d="M42 28H734M42 76H734M42 124H734M42 172H734M42 220H734M42 28V220M176 28V220M310 28V220M444 28V220M578 28V220M712 28V220"></path>
+          <text class="chart-label" x="4" y="32">0</text>
+          <text class="chart-label" x="10" y="128">0</text>
+          <text class="chart-label" x="16" y="224">0</text>
+          <path class="now-line" d="M714 28V220"></path>
+          <text class="chart-label" x="675" y="242">NO LIVE ROWS</text>
+        `;
+        document.querySelectorAll(".chart-legend .legend-item").forEach((item, index) => {
+          const protocol = protocols[index];
+          item.innerHTML = `<i class="dot"></i>${protocol} 0`;
+        });
+        return;
+      }
+
+      const first = timestampMs(liveRows[0]);
+      const last = Math.max(timestampMs(liveRows[liveRows.length - 1]), first + 1);
+      const binCount = 12;
+      const bins = Object.fromEntries(protocols.map((protocol) => [protocol, Array(binCount).fill(0)]));
+      liveRows.forEach((row) => {
+        const protocol = trackedProtocol(row.protocol);
+        const position = (timestampMs(row) - first) / Math.max(1, last - first);
+        const index = Math.max(0, Math.min(binCount - 1, Math.floor(position * binCount)));
+        bins[protocol][index] += 1;
+        counts[protocol] += 1;
+      });
+
+      const maxBin = Math.max(1, ...protocols.flatMap((protocol) => bins[protocol]));
+      const xForIndex = (index) => Math.round(chart.left + ((chart.right - chart.left) * index) / (binCount - 1));
+      const yForValue = (value) => Math.round(chart.bottom - ((chart.bottom - chart.top) * value) / maxBin);
+      const grid = "M42 28H734M42 76H734M42 124H734M42 172H734M42 220H734M42 28V220M176 28V220M310 28V220M444 28V220M578 28V220M712 28V220";
+      const paths = protocols.map((protocol) => {
+        const path = linePath(bins[protocol], xForIndex, yForValue);
+        const area = `${path} L${xForIndex(binCount - 1)} ${chart.bottom} L${xForIndex(0)} ${chart.bottom} Z`;
+        const className = protocolClassName(protocol).replace("protocol-", "line-");
+        return `
+          <path class="trend-area ${className}" d="${area}"></path>
+          <path class="chart-line ${className}" d="${path}"></path>
+        `;
+      }).join("");
+
+      svg.innerHTML = `
+        <path class="chart-grid" d="${grid}"></path>
+        <text class="chart-label" x="4" y="32">${formatNumber(maxBin)}</text>
+        <text class="chart-label" x="10" y="128">${formatNumber(Math.round(maxBin / 2))}</text>
+        <text class="chart-label" x="16" y="224">0</text>
+        ${paths}
+        <path class="now-line" d="M714 28V220"></path>
+        <text class="chart-label" x="690" y="242">NOW</text>
+      `;
+
+      document.querySelectorAll(".chart-legend .legend-item").forEach((item, index) => {
+        const protocol = protocols[index];
+        item.innerHTML = `<i class="dot"></i>${protocol} ${formatNumber(counts[protocol])}`;
+      });
+    }
+
+    function renderAttackBreakdown(rows = []) {
+      const target = document.getElementById("attackBreakdown");
+      if (!target) return;
+      if (!rows.length) {
+        target.innerHTML = '<div class="empty-state">No real attack breakdown rows returned by the API.</div>';
+        return;
+      }
+      const max = Math.max(1, ...rows.map((row) => Number(row.value || 0)));
+      target.innerHTML = rows.slice(0, 6).map((row) => {
+        const width = Math.max(4, Math.round((Number(row.value || 0) / max) * 100));
+        return `
+          <div class="attack-row">
+            <div><div class="attack-name"><span>${escapeHtml(row.name)}</span><span class="num">${formatNumber(row.value)}</span></div><div class="bar-track"><div class="bar" style="width: ${width}%"></div></div></div>
+            <span class="trend delta-up">live</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderProtocolBreakdown(rows = []) {
+      const protocolRows = rows.filter((row) => row.protocol && row.protocol !== "all");
+      const total = protocolRows.reduce((sum, row) => sum + Number(row.total_packets || 0), 0);
+      const protocols = ["HTTP", "MQTT", "RTSP", "SSH"];
+      setText("protocolTotal", formatNumber(total));
+      const legend = document.getElementById("protocolLegend");
+      const rowsByProtocol = Object.fromEntries(protocolRows.map((row) => [String(row.protocol || "").toUpperCase(), row]));
+      let offset = 0;
+      document.querySelectorAll(".donut-seg").forEach((segment, index) => {
+        const protocol = protocols[index];
+        const value = Number(rowsByProtocol[protocol]?.total_packets || 0);
+        const percent = total ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
+        segment.setAttribute("stroke-dasharray", `${percent} ${100 - percent}`);
+        segment.setAttribute("stroke-dashoffset", `${-offset}`);
+        offset += percent;
+      });
+      if (!legend) return;
+      legend.innerHTML = protocols.map((protocol) => {
+        const value = Number(rowsByProtocol[protocol]?.total_packets || 0);
+        return `<span class="legend-item ${protocolClassName(protocol)}"><span class="legend-left"><i class="dot"></i>${protocol}</span><span>${formatNumber(value)} · ${formatPercent(value, total)}</span></span>`;
+      }).join("");
+    }
+
+    function renderStatusBanner(data = {}, liveRows = []) {
+      const summary = data.summary || {};
+      const topSource = (data.top_sources || data.attack_map || [])[0] || liveRows[0];
+      const action = document.getElementById("statusPrimaryAction");
+      if (!topSource) {
+        setText("statusSeverity", "No data");
+        setText("statusHeadline", "No real router events returned by the API");
+        setText("statusConfidence", "0.00");
+        document.getElementById("statusMeta").innerHTML = `
+          <span>Routing state: <strong class="data">no live rows</strong></span>
+          <span>System routes: <strong class="data">HONEY / REAL</strong></span>
+          <span>Primary protocol: <strong class="data">unknown</strong></span>
+          <span>Top source: <strong class="data">none</strong></span>
+        `;
+        action.disabled = true;
+        action.dataset.openIp = "";
+        return;
+      }
+
+      updateSourceDetailFromRow(topSource);
+      const route = routeLabel(topSource);
+      const protocol = trackedProtocol(topSource.protocol || (Array.isArray(topSource.protocols) ? topSource.protocols[0] : ""));
+      const ip = topSource.source_ip || "unknown";
+      const attempts = topSource.count || topSource.event_count || summary.attacked_packets || summary.window_packets || 0;
+      const eventName = topSource.predicted_attack || topSource.event_type || "Observed activity";
+      setText("statusSeverity", route === "HONEY" ? "Active" : "Normal");
+      setText("statusHeadline", `${eventName}: ${formatNumber(attempts)} real event${Number(attempts) === 1 ? "" : "s"} for ${ip}`);
+      setText("statusConfidence", scoreFromRow(topSource));
+      document.getElementById("statusMeta").innerHTML = `
+        <span>Routing state: <strong class="${route === "HONEY" ? "attack" : "ok"}">${route === "HONEY" ? "HONEY hold until timeout" : "REAL system route"}</strong></span>
+        <span>System routes: <strong class="data">HONEY / REAL</strong></span>
+        <span>Primary protocol: <strong class="${protocolClassName(protocol)}">${protocol}</strong></span>
+        <span>Top source: <strong class="data">${escapeHtml(ip)}</strong></span>
+      `;
+      action.disabled = false;
+      action.textContent = route === "HONEY" ? "Open incident" : "Open source";
+      action.dataset.openIp = ip;
+      action.dataset.openRoute = route;
+      action.dataset.openRisk = riskLabel(topSource);
+      action.dataset.openProtocol = protocol;
+      action.dataset.openEvent = eventName;
+      action.dataset.openPayload = topSource.payload || topSource.path || topSource.topic || "router pipeline event";
+      action.dataset.openTime = topSource.last_seen ? relativeTime(topSource.last_seen) : "live";
+    }
+
+    function renderDashboardSnapshot(data) {
+      const summary = data.summary || {};
+      const totalPackets = summary.total_packets_system || summary.window_packets || 0;
+      // True lifetime total = every event ever written to unified_events.jsonl,
+      // not the deduplicated 8k loaded window (which made this tile shrink).
+      const lifetimeTotal = summary.total_events_from_start || totalPackets || 0;
+      // Attack share is labelled "lifetime": denominator is the full lifetime
+      // total so the breakdown adds up to the Lifetime packets tile. Everything
+      // not routed to the honeypot (real backend + log-bridge records with no
+      // decision) counts as non-attack.
+      const honeyPackets = summary.total_attacked_from_start ?? (summary.total_attacked_packets_system || summary.attacked_packets || 0);
+      const sharePackets = lifetimeTotal || ((summary.total_attacked_from_start ?? 0) + (summary.total_normal_from_start ?? 0)) || totalPackets || 0;
+      const realPackets = Math.max(0, sharePackets - honeyPackets);
+      const totalEvents = summary.total_events_from_start || summary.events_loaded || 0;
+      const lastEvent = summary.last_event_at ? relativeTime(summary.last_event_at) : "live";
+      lastLiveRows = [...(data.recent_packets || []), ...(data.latest_routes || []), ...(data.recent_events || [])];
+
+      setText("lifetimePackets", formatNumber(lifetimeTotal));
+      document.getElementById("lifetimePacketsSub").innerHTML = `<span class="delta-up">API lifetime total</span><span>${formatNumber(lastLiveRows.length)} live rows shown</span>`;
+      setText("attackShareValue", formatPercent(honeyPackets, sharePackets));
+      document.getElementById("attackShareSub").innerHTML = `<span>${formatNumber(honeyPackets)} honey</span><span>${formatNumber(realPackets)} real</span>`;
+      setText("activeAlertsValue", formatNumber((data.alerts || []).length));
+      document.getElementById("activeAlertsSub").innerHTML = `<span class="attack">${formatNumber(summary.critical_events || 0)} critical</span><span class="warn">${formatNumber(summary.high_alerts || 0)} high</span>`;
+      setText("uniqueSourcesValue", formatNumber(summary.total_unique_ips_from_start || summary.total_unique_ips_system || summary.unique_ips || 0));
+      document.getElementById("uniqueSourcesSub").innerHTML = `<span class="delta-up">${lastEvent}</span><span>last packet</span>`;
+      setText("modelVersionValue", "live");
+      document.getElementById("pipelineHealthSub").innerHTML = `<span>${formatNumber(summary.predictions || 0)} predictions</span><span>${lastEvent}</span>`;
+      setText("rawEventsValue", formatNumber(summary.total_raw_events_from_start || 0));
+      setText("normalizedEventsValue", formatNumber(summary.total_events_from_start || summary.events_loaded || 0));
+      setText("predictionsValue", formatNumber(summary.predictions || 0));
+      setText("queueDepthValue", formatNumber(Math.max(0, (summary.events_loaded || 0) - (summary.predictions || 0))));
+      setText("lagValue", lastEvent);
+      setText("packetThroughputValue", formatNumber(summary.window_packets || 0));
+      setText("routerThroughputValue", formatNumber((data.latest_routes || []).length));
+      setText("logsThroughputValue", formatNumber(summary.events_loaded || 0));
+      setText("normalizeThroughputValue", formatNumber(summary.total_events_from_start || summary.events_loaded || 0));
+      setText("mlThroughputValue", formatNumber(summary.predictions || 0));
+      setText("parserErrorsValue", formatNumber(summary.parser_errors || 0));
+
+      renderStatusBanner(data, lastLiveRows);
+      renderProtocolBreakdown(data.protocol_dashboards || []);
+      renderAttackBreakdown(data.attack_breakdown || []);
+      renderAlerts(data.alerts || []);
+      renderRoutes(data.latest_routes || []);
+      renderLivePackets(lastLiveRows, data.protocol_dashboards || []);
+      renderTrafficTrend(lastLiveRows);
+      applySearch();
+    }
+
+    async function loadLiveCapture() {
+      try {
+        const response = await fetch(`${API_BASE}/api/summary`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const data = await response.json();
+        renderDashboardSnapshot(data);
+      } catch (error) {
+        showToast(`Live board API unavailable on ${API_BASE}: ${error.message}`);
+      }
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    function normalizedText(element) {
+      return `${element.textContent} ${element.dataset.search || ""}`.toLowerCase();
+    }
+
+    function applySearch() {
+      const query = "";
+      let visibleSources = 0;
+      let visibleAlerts = 0;
+
+      sourceRows.forEach((row) => {
+        const match = !query || normalizedText(row).includes(query);
+        row.classList.toggle("is-hidden", !match);
+        if (match) visibleSources += 1;
+      });
+
+      alertItems.forEach((item) => {
+        const filterMatch =
+          currentAlertFilter === "all" ||
+          item.dataset.severity === currentAlertFilter ||
+          item.dataset.verdict === currentAlertFilter;
+        const searchMatch = !query || normalizedText(item).includes(query);
+        const visible = filterMatch && searchMatch;
+        item.classList.toggle("is-hidden", !visible);
+        if (visible) visibleAlerts += 1;
+      });
+
+      routerLines.forEach((line) => {
+        const match = !query || line.textContent.toLowerCase().includes(query);
+        line.classList.toggle("is-hidden", !match);
+      });
+
+      if (sourceResultCount) {
+        sourceResultCount.textContent = query
+          ? `${visibleSources} source${visibleSources === 1 ? "" : "s"} matched`
+          : `${visibleSources} live source${visibleSources === 1 ? "" : "s"}`;
+      }
+      document.getElementById("sourceEmpty")?.classList.toggle("is-hidden", visibleSources > 0);
+      document.getElementById("alertEmpty")?.classList.toggle("is-hidden", visibleAlerts > 0);
+    }
+
+    function scrollToPanel(id) {
+      const target = document.getElementById(id);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function fmtConfidence(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return "—";
+      return `${Math.round(num * 100)}%`;
+    }
+
+    function fmtDetectionMethod(value) {
+      if (!value) return "—";
+      const labels = {
+        rule_based: "Rule-based",
+        router_rule_based: "Router rule",
+        ml_model: "ML model",
+        low_priority_split: "Low-priority split"
+      };
+      return labels[value] || String(value).replace(/_/g, " ");
+    }
+
+    function fmtRepeatOffender(pred) {
+      if (!pred) return "—";
+      const times = Number(pred.times_seen || 0);
+      if (!pred.is_repeat_offender) return times > 1 ? `No · seen ${times}x` : "No";
+      return `Yes · seen ${times || "2+"}x`;
+    }
+
+    function fmtAbsTime(iso, fallback) {
+      if (!iso) return fallback || "live";
+      const ms = Date.parse(iso);
+      if (!Number.isFinite(ms)) return fallback || iso;
+      return new Date(ms).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+    }
+
+    function openPacketDrawer(data = {}) {
+      const ip = data.openIp || "unknown";
+      const route = data.openRoute || "REAL";
+      const protocol = data.openProtocol ? trackedProtocol(data.openProtocol) : "—";
+      const risk = data.openRisk || "Normal";
+      drawer.classList.remove("open");
+
+      document.getElementById("pktSub").textContent = `${ip} · ${protocol}`;
+      const riskEl = document.getElementById("pktRisk");
+      riskEl.textContent = risk;
+      riskEl.className = /high|critical/i.test(risk) ? "attack" : "ok";
+      const routeEl = document.getElementById("pktRoute");
+      routeEl.textContent = route;
+      routeEl.className = route === "HONEY" ? "attack" : "ok";
+      document.getElementById("pktProtocol").textContent = protocol;
+      document.getElementById("pktTime").textContent = fmtAbsTime(data.openRawtime, data.openTime);
+      document.getElementById("pktAttack").textContent = data.openAttack || data.openEvent || (route === "HONEY" ? "Suspicious activity" : "Normal traffic");
+      document.getElementById("pktConfidence").textContent = "—";
+      document.getElementById("pktBand").textContent = "—";
+      document.getElementById("pktMethod").textContent = "—";
+      document.getElementById("pktRepeat").textContent = "—";
+      document.getElementById("pktIp").textContent = ip;
+      document.getElementById("pktPath").textContent = data.openPath || "—";
+      document.getElementById("pktPayload").textContent = data.openPayload || "—";
+      document.getElementById("pktRecommendation").textContent = "Loading ML recommendation…";
+      const viewBtn = document.getElementById("pktViewIp");
+      if (viewBtn) viewBtn.dataset.openIp = ip;
+
+      packetDrawer.classList.add("open");
+      scrim.classList.add("open");
+      packetDrawer.setAttribute("aria-hidden", "false");
+
+      if (ip && ip !== "unknown") {
+        fetch(`${API_BASE}/api/ip/${encodeURIComponent(ip)}`, { cache: "no-store" })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((detail) => {
+            if (!detail || !packetDrawer.classList.contains("open")) return;
+            const pred = (detail.prediction && Object.keys(detail.prediction).length) ? detail.prediction : null;
+            const sum = detail.summary || {};
+            // Derive a verdict from the router decision so the panel ALWAYS shows
+            // a result, even when the predictor hasn't scored this source yet.
+            const routeDecision = String(sum.last_route_decision || "").toLowerCase();
+            const isSuspicious = routeDecision === "honeypot" || route === "HONEY"
+              || /high|critical/i.test(String((pred && pred.risk_level) || sum.risk_level || ""));
+            const rawAttack = (pred && pred.predicted_attack) || sum.predicted_attack;
+            const hasRealAttack = rawAttack && !/^normal/i.test(String(rawAttack));
+            const attack = hasRealAttack ? rawAttack : (isSuspicious ? "Suspicious activity" : "Normal traffic");
+            document.getElementById("pktAttack").textContent = attack;
+
+            const riskLevel = (pred && pred.risk_level) || sum.risk_level || (isSuspicious ? "High risk" : "Normal");
+            const r = document.getElementById("pktRisk");
+            r.textContent = riskLevel;
+            r.className = /high|critical/i.test(riskLevel) ? "attack" : "ok";
+
+            document.getElementById("pktConfidence").textContent = pred ? fmtConfidence(pred.confidence) : "—";
+            document.getElementById("pktBand").textContent = (pred && pred.confidence_band) || "—";
+            document.getElementById("pktMethod").textContent = pred ? fmtDetectionMethod(pred.detection_method) : "Router decision (no ML yet)";
+            document.getElementById("pktRepeat").textContent = fmtRepeatOffender(pred);
+
+            // Full ML detail — attacker intelligence + raw model output
+            const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = (val === 0 || val) ? val : "—"; };
+            setText("pktProfile", pred && pred.attacker_profile);
+            setText("pktKillChain", pred && pred.kill_chain_stage);
+            if (pred && pred.ml_prediction) {
+              const rawConf = (pred.ml_confidence === 0 || pred.ml_confidence) ? ` (${fmtConfidence(pred.ml_confidence)})` : "";
+              const lowFlag = pred.ml_low_confidence ? " · low-confidence, ignored" : "";
+              setText("pktMlRaw", `${pred.ml_prediction}${rawConf}${lowFlag}`);
+            } else { setText("pktMlRaw", null); }
+
+            // ML feature evidence
+            setText("pktFeatEvents", pred && pred.total_events);
+            setText("pktFeatRpm", pred && pred.requests_per_min);
+            setText("pktFeatScan", pred && pred.scanner_path_hits);
+            setText("pktFeat404", pred && pred.status_404_count);
+            setText("pktFeat401", pred && pred.status_401_count);
+            setText("pktFeatLogin", pred && pred.login_attempts);
+            setText("pktFeatExploit", pred ? (pred.has_exploit ? "yes" : "no") : null);
+            const g = pred && pred.geo;
+            setText("pktGeo", g ? [g.country, g.city, g.isp].filter((x) => x && x !== "Unknown").join(" · ") || "Unknown" : null);
+
+            document.getElementById("pktRecommendation").textContent =
+              (pred && pred.recommendation) || (sum && sum.recommendation)
+              || (isSuspicious ? "Routed to honeypot — monitor this source." : "No attack pattern detected for this source.");
+          })
+          .catch(() => {
+            document.getElementById("pktRecommendation").textContent = "Could not load ML prediction (API unreachable).";
+          });
+      } else {
+        document.getElementById("pktRecommendation").textContent = "No source IP on this packet.";
+      }
+    }
+
+    function hidePacketDrawer() {
+      packetDrawer.classList.remove("open");
+      packetDrawer.setAttribute("aria-hidden", "true");
+      if (!drawer.classList.contains("open")) scrim.classList.remove("open");
+    }
+
+    function openDrawer(ip, triggerData = {}) {
+      if (!ip) return;
+      packetDrawer.classList.remove("open");
+      packetDrawer.setAttribute("aria-hidden", "true");
+      const baseDetail = sourceDetails[ip] || emptySourceDetail(ip, triggerData.openRoute || "REAL");
+      const detail = { ...baseDetail };
+      const clickedProtocol = triggerData.openProtocol ? trackedProtocol(triggerData.openProtocol) : "";
+      if (triggerData.openRoute) {
+        detail.route = baseDetail.route === "HONEY" || triggerData.openRoute === "HONEY" ? "HONEY" : triggerData.openRoute;
+        detail.decision = detail.route;
+        detail.risk = detail.route === "HONEY" ? "High risk" : (triggerData.openRisk || detail.risk || "Normal");
+        detail.hold = detail.route === "HONEY" ? "system timeout" : "n/a";
+        if (clickedProtocol) {
+          detail.protocols = [clickedProtocol, ...detail.protocols.filter((protocol) => protocol !== clickedProtocol)];
+        }
+      }
+      const clickedPacket = triggerData.openRoute ? {
+        time: triggerData.openTime || detail.last || "live",
+        protocol: clickedProtocol || detail.protocols[0] || "HTTP",
+        route: detail.route,
+        event: triggerData.openEvent || "Observed activity",
+        payload: triggerData.openPayload || "router pipeline event"
+      } : null;
+      const packets = [clickedPacket, ...(detail.packets || [])]
+        .filter(Boolean)
+        .filter((item, index, items) => items.findIndex((candidate) => `${candidate.time}|${candidate.protocol}|${candidate.payload}` === `${item.time}|${item.protocol}|${item.payload}`) === index)
+        .slice(0, 12);
+      const routes = (detail.routes || []).slice(0, 3);
+      sourceDetails[ip] = detail;
+      currentDrawerIp = ip;
+      document.getElementById("drawerIp").textContent = ip;
+      document.getElementById("drawerGeo").textContent = clickedProtocol ? `${detail.geo} · selected protocol ${clickedProtocol}` : detail.geo;
+      document.getElementById("drawerRisk").textContent = detail.risk || "Normal";
+      document.getElementById("drawerRisk").className = detail.risk === "High risk" ? "attack" : "ok";
+      document.getElementById("drawerDecision").textContent = detail.route || "REAL";
+      document.getElementById("drawerDecision").className = detail.route === "HONEY" ? "attack" : "ok";
+      document.getElementById("drawerFirst").textContent = detail.first;
+      document.getElementById("drawerLast").textContent = detail.last;
+      document.getElementById("drawerPacketCount").textContent = formatNumber(Math.max(Number(detail.packetCount || 0), packets.length));
+      document.getElementById("drawerRouteCount").textContent = formatNumber(Math.max(Number(detail.routeCount || 0), routes.length));
+
+      document.getElementById("drawerProtocols").innerHTML = detail.protocols.map((protocol) => {
+        return `<span class="protocol-chip ${protocolClassName(protocol)}">${escapeHtml(protocol)}</span>`;
+      }).join("");
+
+      document.getElementById("drawerLastPackets").innerHTML = packets.length ? packets.map((packet) => {
+        const route = packet.route || "REAL";
+        return `
+          <div class="packet-mini">
+            <strong><span class="protocol-chip ${protocolClassName(packet.protocol)}">${escapeHtml(packet.protocol)}</span><span class="verdict ${routeClass(route)}">${route}</span><span>${escapeHtml(packet.event)}</span></strong>
+            <span>${escapeHtml(packet.time ? relativeTime(packet.time) : "live")} · ${escapeHtml(packet.payload)}</span>
+          </div>
+        `;
+      }).join("") : '<div class="empty-state">No packet rows for this source in the current API window.</div>';
+
+      document.getElementById("drawerLastRoutes").innerHTML = routes.length ? routes.map((routeItem) => {
+        const route = routeItem.route || "REAL";
+        return `
+          <div class="route-mini">
+            <strong><span class="protocol-chip ${protocolClassName(routeItem.protocol)}">${escapeHtml(routeItem.protocol)}</span><span class="verdict ${routeClass(route)}">${route}</span><span>${escapeHtml(routeItem.event)}</span></strong>
+            <span>${escapeHtml(routeItem.time ? relativeTime(routeItem.time) : "live")} · ${escapeHtml(routeItem.payload)}</span>
+          </div>
+        `;
+      }).join("") : '<div class="empty-state">No router decision rows for this source in the current API window.</div>';
+
+      const routeCss = detail.route === "REAL" ? "real" : "honey";
+      const holdText = detail.route === "REAL" ? "real system route" : `hold until timeout ${detail.hold}`;
+      document.getElementById("drawerRouteState").innerHTML = `
+        <span class="verdict ${routeCss}">${detail.route}</span>
+        <span class="data">${holdText}</span>
+      `;
+
+      document.querySelectorAll(".drawer-action").forEach((button) => {
+        const key = button.dataset.drawerAction === "watchlist" ? "watchlisted" : "acknowledged";
+        button.classList.toggle("active", Boolean(detail[key]));
+      });
+
+      drawer.classList.add("open");
+      scrim.classList.add("open");
+      drawer.setAttribute("aria-hidden", "false");
+    }
+
+    function hideDrawer() {
+      drawer.classList.remove("open");
+      packetDrawer.classList.remove("open");
+      scrim.classList.remove("open");
+      drawer.setAttribute("aria-hidden", "true");
+      packetDrawer.setAttribute("aria-hidden", "true");
+    }
+
+    document.querySelectorAll(".nav-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".nav-button").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        const target = button.dataset.navTarget;
+        if (target === "settings") {
+          document.body.classList.toggle("pause-motion");
+          showToast(document.body.classList.contains("pause-motion") ? "Live motion paused." : "Live motion resumed.");
+          return;
+        }
+        scrollToPanel(target);
+      });
+    });
+
+    const appShell = document.querySelector(".app");
+    document.getElementById("railToggle")?.addEventListener("click", () => {
+      appShell?.classList.add("rail-collapsed");
+    });
+    document.getElementById("railReopen")?.addEventListener("click", () => {
+      appShell?.classList.remove("rail-collapsed");
+    });
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tab.parentElement.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+        tab.classList.add("active");
+        currentTrafficRange = tab.dataset.range || "24h";
+        renderTrafficTrend(lastLiveRows);
+        showToast(`Traffic range changed to ${currentTrafficRange}; chart uses live board rows only.`);
+      });
+    });
+
+    document.querySelectorAll(".filter-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        chip.parentElement.querySelectorAll(".filter-chip").forEach((item) => item.classList.remove("active"));
+        chip.classList.add("active");
+        currentAlertFilter = chip.dataset.filter;
+        applySearch();
+        showToast(`Alert filter set to ${chip.textContent}.`);
+      });
+    });
+
+    document.querySelectorAll(".drawer-action[data-drawer-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const detail = sourceDetails[currentDrawerIp];
+        if (!detail) {
+          showToast("No real source detail is loaded for this IP yet.");
+          return;
+        }
+        const isWatchlist = button.dataset.drawerAction === "watchlist";
+        const key = isWatchlist ? "watchlisted" : "acknowledged";
+        detail[key] = !detail[key];
+        button.classList.toggle("active", detail[key]);
+        showToast(`${currentDrawerIp} ${detail[key] ? "marked in" : "removed from"} ${isWatchlist ? "watchlist" : "acknowledged alerts"}.`);
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      const packetTarget = event.target.closest("[data-open-packet]");
+      if (packetTarget && !packetTarget.disabled) {
+        openPacketDrawer(packetTarget.dataset);
+        return;
+      }
+      const target = event.target.closest("[data-open-ip]");
+      if (!target) return;
+      if (target.disabled) return;
+      openDrawer(target.dataset.openIp, target.dataset);
+    });
+
+    closeDrawer.addEventListener("click", hideDrawer);
+    document.getElementById("closePacketDrawer")?.addEventListener("click", hideDrawer);
+    scrim.addEventListener("click", hideDrawer);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") hideDrawer();
+    });
+
+    function tickClock() {
+      const now = new Date();
+      const date = now.toISOString().replace("T", " ").slice(0, 19);
+      document.getElementById("liveClock").textContent = `${date} UTC`;
+    }
+
+    tickClock();
+    setInterval(tickClock, 1000);
+    loadLiveCapture();
+    setInterval(loadLiveCapture, 15000);
+  </script>
+</body>
+</html>

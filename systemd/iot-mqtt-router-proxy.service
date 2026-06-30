@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT public MQTT decision router on port 1883
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+ExecStart=/usr/bin/python3 /opt/iot-honeypot/router/proxy/mqtt_decision_proxy.py --listen-host 0.0.0.0 --listen-port 1883 --ingress-port-label 1883 --broker-host 127.0.0.1 --broker-port 11883 --cache-path /opt/iot-honeypot/router/state_cache.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT Honeypot Prototype Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/iot-honeypot/dashboard_ui_prototype
+ExecStart=/usr/bin/python3 -m http.server 8502 --bind 0.0.0.0
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

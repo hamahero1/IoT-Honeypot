@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT HTTP honeypot backend on localhost:8080
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/iot-honeypot/http-honeypot/deploy_http_honeypot_fixed.sh
+ExecStop=/usr/bin/docker stop http-honeypot
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

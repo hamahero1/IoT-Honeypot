@@ -1,0 +1,15 @@
+[Unit]
+Description=IoT honeypot event-driven normalization, feature extraction, and ML automation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+Environment=PIPELINE_RUN_ON_STARTUP=0
+ExecStart=/opt/iot-honeypot/run_pipeline_watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

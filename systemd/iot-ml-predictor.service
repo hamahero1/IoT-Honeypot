@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT honeypot ML predictor loop
+After=network-online.target iot-pipeline-loop.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot/ml-engine
+ExecStart=/opt/iot-honeypot/ml-engine/venv/bin/python /opt/iot-honeypot/ml-engine/predictor.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

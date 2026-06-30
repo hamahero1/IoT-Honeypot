@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT honeypot normalization and feature extraction loop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+ExecStart=/opt/iot-honeypot/run_pipeline_loop.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

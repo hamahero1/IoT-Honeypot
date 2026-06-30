@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT MQTT router-aware sniffer on localhost:1883
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+ExecStart=/usr/bin/python3 /opt/iot-honeypot/router/mqtt_router_sniffer.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

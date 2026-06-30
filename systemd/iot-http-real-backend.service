@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT safe real HTTP backend on localhost:28080
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+ExecStart=/usr/bin/python3 /opt/iot-honeypot/router/proxy/real_http_backend.py --listen-host 127.0.0.1 --listen-port 28080
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT public HTTP decision router on port 80
+After=network-online.target iot-http-honeypot.service iot-http-real-backend.service
+Wants=network-online.target iot-http-honeypot.service iot-http-real-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/iot-honeypot
+ExecStart=/usr/bin/python3 /opt/iot-honeypot/router/proxy/http_decision_proxy.py --listen-host 0.0.0.0 --listen-port 80 --ingress-port-label 80 --real-host 127.0.0.1 --real-port 28080 --honeypot-host 127.0.0.1 --honeypot-port 8080 --session-ttl-seconds 1800 --cache-path /opt/iot-honeypot/router/state_cache.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

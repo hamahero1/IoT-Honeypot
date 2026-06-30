@@ -1,0 +1,2 @@
+{"timestamp_utc": "2026-05-01T17:35:13.075663+00:00", "source_ip": "134.209.206.31", "reason": "Blocked from dashboard alert panel", "operator": "dashboard", "mode": "dashboard_blocklist"}
+{"timestamp_utc": "2026-05-01T17:35:22.316370+00:00", "source_ip": "206.135.169.181", "reason": "Blocked from dashboard alert panel", "operator": "dashboard", "mode": "dashboard_blocklist"}

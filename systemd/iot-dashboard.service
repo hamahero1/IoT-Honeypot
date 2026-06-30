@@ -1,0 +1,27 @@
+[Unit]
+Description=IoT Honeypot React/FastAPI Dashboard
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/iot-honeypot
+# Memory caps for the 1GB box: the dashboard is a live view, so ingesting the
+# full multi-MB JSONL history was causing swap-thrash and 30s+ API stalls
+# (the packet drawer's /api/ip fetch never returned). Bound the working set to
+# recent activity; combined with the in-process dataset cache this keeps the
+# API responsive.
+Environment=DASHBOARD_MAX_EVENTS=8000
+Environment=DASHBOARD_MAX_ROUTES=8000
+Environment=DASHBOARD_WINDOW_PACKETS=2500
+Environment=DASHBOARD_MAX_PREDICTIONS=3000
+Environment=DASHBOARD_MAX_IP_DETAILS=1500
+Environment=DASHBOARD_DATASET_MAX_AGE_SECONDS=8
+Environment=OMP_NUM_THREADS=1
+ExecStart=/bin/bash /opt/iot-honeypot/run_dashboard.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

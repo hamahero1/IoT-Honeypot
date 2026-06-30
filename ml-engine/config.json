@@ -1,0 +1,16 @@
+{
+  "log_files": {
+    "http":         "/opt/iot-honeypot/logs/http_honeypot.jsonl",
+    "http_ingress": "/opt/iot-honeypot/logs/http_ingress_80.jsonl",
+    "ssh":          "/opt/iot-honeypot/logs/ssh_router_events.jsonl",
+    "mqtt":         "/opt/iot-honeypot/logs/mqtt_honeypot.jsonl",
+    "mqtt_ingress": "/opt/iot-honeypot/logs/mqtt_ingress_1883.jsonl",
+    "rtsp":         "/opt/iot-honeypot/logs/rtsp_router_events.jsonl"
+  },
+  "model_path":         "/opt/iot-honeypot/ml-engine/models/iot_honeypot_model.pkl",
+  "encoder_path":       "/opt/iot-honeypot/ml-engine/models/label_encoder.pkl",
+  "scaler_path":        "/opt/iot-honeypot/ml-engine/models/scaler.pkl",
+  "columns_path":       "/opt/iot-honeypot/ml-engine/models/feature_columns.pkl",
+  "output_path":        "/opt/iot-honeypot/ml-engine/output/predictions.jsonl",
+  "run_every_seconds":  60
+}

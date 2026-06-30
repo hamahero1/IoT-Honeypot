@@ -1,0 +1,232 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IoT Honeypot — Full System Compose
+#
+# Ports exposed to the host:
+#   80    → HTTP decision proxy (routes real vs honeypot traffic)
+#   1883  → MQTT decision proxy
+#   8080  → HTTP honeypot (Flask fake IoT portal)      [internal only by default]
+#   28080 → Real HTTP backend (safe e-commerce site)  [internal only by default]
+#   8501  → Dashboard API (FastAPI + React)
+#   8502  → SOC dashboard prototype (static HTML)
+#
+# Shared data volumes:
+#   logs/       → raw event JSONL files from all protocols
+#   normalized/ → unified_events.jsonl produced by the pipeline
+#   ml-output/  → predictions.jsonl produced by the ML engine
+#   models/     → trained sklearn model files (must be populated before start)
+#   state/      → router session state (state_cache.json)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── HTTP Honeypot ─────────────────────────────────────────────────────────
+  http-honeypot:
+    build: ./http-honeypot
+    container_name: iot-http-honeypot
+    restart: always
+    volumes:
+      - logs:/logs
+    environment:
+      - LOG_PATH=/logs/http_honeypot.jsonl
+    expose:
+      - "8080"
+    networks:
+      - iot-net
+
+  # ── Real HTTP Backend ──────────────────────────────────────────────────────
+  http-real:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    container_name: iot-http-real
+    restart: always
+    volumes:
+      - logs:/opt/iot-honeypot/logs
+    command:
+      - python
+      - real_http_backend.py
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "28080"
+    expose:
+      - "28080"
+    networks:
+      - iot-net
+
+  # ── HTTP Decision Proxy (port 80) ──────────────────────────────────────────
+  # Needs NET_BIND_SERVICE capability to listen on privileged port 80.
+  http-proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    container_name: iot-http-proxy
+    restart: always
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - logs:/opt/iot-honeypot/logs
+      - state:/opt/iot-honeypot/router
+    command:
+      - python
+      - http_decision_proxy.py
+      - --listen-host
+      - "0.0.0.0"
+      - --listen-port
+      - "80"
+      - --ingress-port-label
+      - "80"
+      - --real-host
+      - http-real
+      - --real-port
+      - "28080"
+      - --honeypot-host
+      - http-honeypot
+      - --honeypot-port
+      - "8080"
+      - --session-ttl-seconds
+      - "1800"
+      - --cache-path
+      - /opt/iot-honeypot/router/state_cache.json
+    ports:
+      - "80:80"
+    networks:
+      - iot-net
+    depends_on:
+      - http-honeypot
+      - http-real
+
+  # ── MQTT Decision Proxy (port 1883) ───────────────────────────────────────
+  mqtt-proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    container_name: iot-mqtt-proxy
+    restart: always
+    volumes:
+      - logs:/opt/iot-honeypot/logs
+      - state:/opt/iot-honeypot/router
+    command:
+      - python
+      - mqtt_decision_proxy.py
+      - --listen-host
+      - "0.0.0.0"
+      - --listen-port
+      - "1883"
+      - --ingress-port-label
+      - "1883"
+      - --broker-host
+      - mqtt-broker
+      - --broker-port
+      - "1883"
+      - --cache-path
+      - /opt/iot-honeypot/router/state_cache.json
+    ports:
+      - "1883:1883"
+    networks:
+      - iot-net
+    depends_on:
+      - mqtt-broker
+
+  # ── Real MQTT Broker ───────────────────────────────────────────────────────
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: iot-mqtt-broker
+    restart: always
+    expose:
+      - "1883"
+    networks:
+      - iot-net
+
+  # ── Normalization + Pipeline ───────────────────────────────────────────────
+  # Watches log files and rebuilds unified_events.jsonl on every change.
+  pipeline:
+    image: python:3.10-slim
+    container_name: iot-pipeline
+    restart: always
+    working_dir: /app
+    volumes:
+      - ./normalization:/app
+      - ./router:/app/router
+      - logs:/opt/iot-honeypot/logs
+      - normalized:/opt/iot-honeypot/normalized
+    environment:
+      - REBUILD_MAX_LINES_PER_SOURCE=5000
+      - REBUILD_MAX_SSH_FILES=7
+      - PIPELINE_WATCH_INTERVAL_SECONDS=2
+      - OMP_NUM_THREADS=1
+    # rebuild_unified_events.py is a one-shot script (no --watch flag), so we
+    # loop it on a short interval to keep unified_events.jsonl fresh.
+    command: >
+      bash -c "while true; do python -u rebuild_unified_events.py || true; sleep 2; done"
+    networks:
+      - iot-net
+    depends_on:
+      - http-proxy
+      - mqtt-proxy
+
+  # ── ML Engine ─────────────────────────────────────────────────────────────
+  ml-engine:
+    build: ./ml-engine
+    container_name: iot-ml-engine
+    restart: always
+    volumes:
+      - normalized:/opt/iot-honeypot/normalized
+      - ml-output:/opt/iot-honeypot/ml-engine/output
+      # Bind-mount the trained models that ship in codes/ml-engine/models so the
+      # predictor can load them (a named volume would start empty).
+      - ./ml-engine/models:/opt/iot-honeypot/ml-engine/models:ro
+      - logs:/opt/iot-honeypot/logs
+    environment:
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+      - PYTHONUNBUFFERED=1
+    networks:
+      - iot-net
+
+  # ── Dashboard API (FastAPI on :8501) ───────────────────────────────────────
+  dashboard-api:
+    build: ./dashboard-api
+    container_name: iot-dashboard-api
+    restart: always
+    ports:
+      - "8501:8501"
+    volumes:
+      - normalized:/opt/iot-honeypot/normalized
+      - ml-output:/opt/iot-honeypot/ml-engine/output
+      - logs:/opt/iot-honeypot/logs
+    environment:
+      - DASHBOARD_MAX_EVENTS=8000
+      - DASHBOARD_MAX_ROUTES=8000
+      - DASHBOARD_WINDOW_PACKETS=2500
+      - DASHBOARD_MAX_PREDICTIONS=3000
+      - DASHBOARD_MAX_IP_DETAILS=1500
+      - DASHBOARD_DATASET_MAX_AGE_SECONDS=8
+      - OMP_NUM_THREADS=1
+    networks:
+      - iot-net
+
+  # ── SOC Dashboard Prototype (static HTML on :8502) ────────────────────────
+  dashboard-ui:
+    build: ./dashboard-ui
+    container_name: iot-dashboard-ui
+    restart: always
+    ports:
+      - "8502:8502"
+    networks:
+      - iot-net
+
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  logs:
+  normalized:
+  ml-output:
+  state:
+
+networks:
+  iot-net:
+    driver: bridge
