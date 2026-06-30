@@ -20,6 +20,7 @@ Dashboard: **http://YOUR-IP:8502** (SOC prototype) | API: **http://YOUR-IP:8501*
 10. [Integrating on a New Machine](#10-integrating-on-a-new-machine)
 11. [Health Check](#11-health-check)
 12. [Environment Variables Reference](#12-environment-variables-reference)
+13. [Managing Live systemd Services](#13-managing-live-systemd-services)
 
 ---
 
@@ -584,6 +585,66 @@ tail -n 0 -F \
 | `OMP_NUM_THREADS` | 1 | ml-engine / dashboard-api — prevent numpy thread explosion |
 | `OPENBLAS_NUM_THREADS` | 1 | ml-engine |
 | `LOG_PATH` | /logs/http_honeypot.jsonl | http-honeypot |
+
+---
+
+## 13. Managing Live systemd Services
+
+Here are your actual running services. Stop and start them like this:
+
+### Stop everything
+
+```bash
+sudo systemctl stop \
+  iot-dashboard-prototype.service \
+  iot-dashboard.service \
+  iot-predictor.service \
+  iot-pipeline-auto.service \
+  iot-http-router-proxy.service \
+  iot-mqtt-router-proxy.service \
+  iot-http-real-backend.service \
+  iot-http-honeypot.service
+```
+
+### Start everything
+
+Start in dependency order (backends/proxies first, then pipeline, predictor, dashboards):
+
+```bash
+sudo systemctl start \
+  iot-http-honeypot.service \
+  iot-http-real-backend.service \
+  iot-http-router-proxy.service \
+  iot-mqtt-router-proxy.service \
+  iot-pipeline-auto.service \
+  iot-predictor.service \
+  iot-dashboard.service \
+  iot-dashboard-prototype.service
+```
+
+### Or just restart (simplest)
+
+If it's already running and you just want a clean bounce:
+
+```bash
+sudo systemctl restart \
+  iot-http-honeypot.service iot-http-real-backend.service \
+  iot-http-router-proxy.service iot-mqtt-router-proxy.service \
+  iot-pipeline-auto.service iot-predictor.service \
+  iot-dashboard.service iot-dashboard-prototype.service
+```
+
+### Verify
+
+```bash
+systemctl list-units --type=service 'iot-*' --no-pager
+./check_health.sh
+```
+
+**Notes:**
+
+- `iot-http-honeypot.service` shows `exited` — that's normal; it's a oneshot that launches the honeypot Docker container, which keeps running on its own.
+- The other unit files in `systemd/` (`iot-ml-predictor`, `iot-pipeline-loop`, `iot-mqtt-router-sniffer`, `iot-zram`) are not active — they're older/alternate variants. Your live stack is the 8 services above.
 
 ---
 
